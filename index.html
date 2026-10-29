@@ -17,6 +17,7 @@
     <button data-tab="register">在庫登録</button>
     <button data-tab="usage">使用記録（データシート）</button>
     <button data-tab="master">薬剤マスタ</button>
+    <button data-tab="patients">患者マスタ</button>
     <button data-tab="settings">設定・バックアップ</button>
   </nav>
 
@@ -151,6 +152,30 @@
           <thead>
             <tr><th>コード</th><th>区分</th><th>薬剤名</th><th>規格</th><th>単位</th><th>有効期限</th><th>標準用法・用量</th><th>操作</th></tr>
           </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 患者マスタ -->
+    <section id="tab-patients" class="tab">
+      <div class="toolbar">
+        <label class="file-btn">Excel患者マスタを読み込む
+          <input type="file" id="patient-file" accept=".xlsx,.xlsm,.xls,.csv">
+        </label>
+        <label class="check"><input type="checkbox" id="patient-replace" checked> 既存の患者マスタを置き換える</label>
+        <button id="patient-template">ひな形をダウンロード</button>
+        <button id="patient-clear">患者マスタを削除</button>
+        <input type="search" id="patient-search" placeholder="患者名・IDで検索">
+      </div>
+      <p class="hint">
+        1行目を見出し行とし、<b>患者名</b>（氏名）の列が必須です。<b>患者ID</b>（患者番号・カルテ番号）と <b>カナ</b>（フリガナ）の列があれば併せて取り込みます。列の順番は問いません。
+        取り込むと、在庫登録の患者名入力で候補が表示され、選ぶと患者IDも自動で入ります。カナでも検索できます。
+      </p>
+      <div class="summary" id="patient-summary"></div>
+      <div class="table-wrap">
+        <table class="list" id="patient-table">
+          <thead><tr><th>患者ID</th><th>患者名</th><th>カナ</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>

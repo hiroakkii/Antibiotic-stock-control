@@ -26,6 +26,7 @@
     if (saved.memoTitle === '処方メモ（在庫薬使用）') delete saved.memoTitle; // 旧初期値は新しい表題に置き換える
     return {
       drugs: data.drugs || [],
+      patients: data.patients || [],
       stocks: data.stocks || [],
       usages: data.usages || [],
       settings: Object.assign({}, DEFAULT_SETTINGS, saved),
@@ -123,8 +124,12 @@
       '<option value="' + esc(d.name) + '">' + esc(d.category + (d.spec ? ' ' + d.spec : '') + ' / 有効期限 ' + L.monthsText(d.expiryMonths)) + '</option>'
     ).join('');
     $('#dl-doctors').innerHTML = db.settings.doctors.map((n) => '<option value="' + esc(n) + '">').join('');
-    const patients = Array.from(new Set(db.stocks.map((s) => s.patientName).filter(Boolean))).sort();
-    $('#dl-patients').innerHTML = patients.map((n) => '<option value="' + esc(n) + '">').join('');
+    // 患者マスタ（ID・カナを補足表示）＋ これまでに在庫登録した患者名
+    const known = new Set(db.patients.map((p) => p.name));
+    const others = Array.from(new Set(db.stocks.map((s) => s.patientName).filter((n) => n && !known.has(n)))).sort();
+    $('#dl-patients').innerHTML =
+      db.patients.map((p) => '<option value="' + esc(p.name) + '">' + esc([p.id, p.kana].filter(Boolean).join(' ')) + '</option>').join('') +
+      others.map((n) => '<option value="' + esc(n) + '">').join('');
   }
 
   // ---------- 在庫一覧 ----------
@@ -241,6 +246,12 @@
     showTab('register');
     updateRegisterPreview();
   }
+
+  // 患者マスタにある患者名を選んだら、患者IDを自動で入れる
+  stockForm.patientName.addEventListener('input', () => {
+    const p = db.patients.find((x) => x.name === stockForm.patientName.value.trim());
+    if (p && p.id) stockForm.patientId.value = p.id;
+  });
 
   stockForm.drugName.addEventListener('input', () => {
     const d = findDrug(stockForm.drugName.value);
@@ -661,6 +672,88 @@
     render();
   });
 
+  // ---------- 患者マスタ ----------
+  const PATIENT_ALIASES = {
+    id: ['患者id', '患者番号', 'id', 'カルテ番号', '患者コード', '診察券番号'],
+    name: ['患者名', '氏名', '名前', '患者氏名'],
+    kana: ['カナ', 'フリガナ', 'ふりがな', '患者カナ', '氏名カナ', 'カナ氏名', '患者名カナ', '患者名(カナ)'],
+  };
+
+  function parsePatientRows(rows) {
+    if (!rows.length) return [];
+    const col = {};
+    Object.keys(rows[0]).forEach((h) => {
+      const n = normHeader(h);
+      Object.keys(PATIENT_ALIASES).forEach((k) => {
+        if (!col[k] && PATIENT_ALIASES[k].some((a) => normHeader(a) === n)) col[k] = h;
+      });
+    });
+    if (!col.name) throw new Error('「患者名」（または氏名）の列が見つかりません。');
+    const seen = new Set();
+    const list = [];
+    rows.forEach((r) => {
+      const name = String(r[col.name] || '').trim();
+      const id = col.id ? String(r[col.id] || '').trim() : '';
+      if (!name) return;
+      const key = id + '|' + name;
+      if (seen.has(key)) return;
+      seen.add(key);
+      list.push({ id: id, name: name, kana: col.kana ? String(r[col.kana] || '').trim() : '' });
+    });
+    return list;
+  }
+
+  $('#patient-file').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const name = wb.SheetNames.find((n) => /患者/.test(n)) || wb.SheetNames[0];
+      const list = parsePatientRows(XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false }));
+      if (!list.length) throw new Error('取り込める患者がありませんでした。');
+      if ($('#patient-replace').checked) {
+        db.patients = list;
+      } else {
+        list.forEach((p) => {
+          const i = p.id ? db.patients.findIndex((x) => x.id === p.id) : -1;
+          if (i >= 0) db.patients[i] = p; else db.patients.push(p);
+        });
+      }
+      save();
+      render();
+      alert('シート「' + name + '」から ' + list.length + ' 名を読み込みました。');
+    } catch (err) {
+      alert('患者マスタを読み込めませんでした。\n' + err.message);
+    }
+  });
+
+  $('#patient-template').addEventListener('click', () => {
+    const ws = XLSX.utils.aoa_to_sheet([['患者ID', '患者名', 'カナ'], ['0001', '山田 太郎', 'ヤマダ タロウ']]);
+    ws['!cols'] = [{ wch: 12 }, { wch: 20 }, { wch: 24 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '患者マスタ');
+    XLSX.writeFile(wb, '患者マスタ_ひな形.xlsx');
+  });
+
+  $('#patient-clear').addEventListener('click', () => {
+    if (db.patients.length && confirm('患者マスタ ' + db.patients.length + ' 名を削除します。在庫データには影響しません。よろしいですか？')) {
+      db.patients = []; save(); render();
+    }
+  });
+
+  $('#patient-search').addEventListener('input', renderPatients);
+
+  function renderPatients() {
+    const q = $('#patient-search').value.trim();
+    const hits = db.patients.filter((p) => !q || (p.id + ' ' + p.name + ' ' + p.kana).includes(q));
+    const LIMIT = 200;
+    $('#patient-summary').textContent = '患者マスタ ' + db.patients.length + ' 名' + (hits.length > LIMIT ? '（' + hits.length + ' 名該当、先頭' + LIMIT + '名を表示）' : '');
+    $('#patient-table tbody').innerHTML = hits.slice(0, LIMIT).map((p) =>
+      '<tr><td>' + esc(p.id) + '</td><td>' + esc(p.name) + '</td><td>' + esc(p.kana) + '</td></tr>'
+    ).join('') || '<tr><td colspan="3" class="empty">患者マスタが未登録です。Excelファイルを読み込んでください。</td></tr>';
+  }
+
   // ---------- 設定・バックアップ ----------
   const settingsForm = $('#settings-form');
 
@@ -709,6 +802,7 @@
     renderStock();
     renderUsage();
     renderMaster();
+    renderPatients();
     renderSettings();
   }
 
