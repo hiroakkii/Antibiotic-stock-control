@@ -118,6 +118,7 @@ tr.row-red td { background: var(--red-bg); }
 tr.row-red td:first-child, tr.row-yellow td:first-child { font-weight: bold; }
 tr.row-closed td { color: var(--muted); background: #f2f2f2; }
 tr.row-pending td:first-child { border-left: 4px solid var(--red-strong); }
+#stock-table tr.row-pending td { background: #fff0f0; }
 
 .form {
   display: grid;

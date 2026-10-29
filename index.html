@@ -102,8 +102,7 @@
         <table class="list" id="usage-table">
           <thead>
             <tr>
-              <th>No.</th><th>患者名</th><th>使用開始日</th><th>医師名</th><th>薬剤名</th>
-              <th>用法・用量</th><th>処方メモ</th><th>操作</th>
+              <th>No.</th><th>患者名</th><th>使用開始日</th><th>開始指示医師</th><th>薬剤名</th><th>処方メモ</th><th>操作</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -199,17 +198,11 @@
       <label>使用開始日 <span class="req">*</span>
         <input name="startDate" type="date" required>
       </label>
-      <label>指示医師名 <span class="req">*</span>
+      <label>開始指示医師 <span class="req">*</span>
         <input name="doctorName" list="dl-doctors" required>
       </label>
       <label>使用数量
         <span class="inline"><input name="quantity" type="number" min="0" step="any"> <span id="use-unit"></span></span>
-      </label>
-      <label>日数
-        <span class="inline"><input name="days" type="number" min="0" step="1" class="short"> 日分</span>
-      </label>
-      <label class="wide">用法・用量
-        <input name="dosage" placeholder="例: 1回1錠 1日3回 毎食後">
       </label>
       <label class="wide">記入者（指示受け）
         <input name="recorder">

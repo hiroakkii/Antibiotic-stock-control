@@ -100,6 +100,11 @@
     };
   }
 
+  // 使用開始指示済みで、処方メモが未発行の使用記録（あれば）
+  function pendingUsage(s) {
+    return db.usages.find((u) => u.stockId === s.id && !u.memoIssued) || null;
+  }
+
   function stockStatus(s) {
     return judge(s.prescribedDate, s.expiryMonths, s.actualExpiry);
   }
@@ -157,15 +162,16 @@
     const order = { red: 0, yellow: 1, green: 2 };
 
     const rows = db.stocks
-      .map((s) => ({ s: s, info: stockStatus(s) }))
-      .filter(({ s, info }) => {
-        if (!showClosed && s.state !== '在庫') return false;
+      .map((s) => ({ s: s, info: stockStatus(s), pending: pendingUsage(s) }))
+      .filter(({ s, info, pending }) => {
+        if (!showClosed && s.state !== '在庫' && !pending) return false;
         if (cat && s.category !== cat) return false;
         if (st && (!info || info.status !== st)) return false;
         if (q && !(s.patientName + ' ' + s.drugName + ' ' + (s.patientId || '')).includes(q)) return false;
         return true;
       })
       .sort((a, b) =>
+        (b.pending ? 1 : 0) - (a.pending ? 1 : 0) ||
         (a.s.state === '在庫' ? 0 : 1) - (b.s.state === '在庫' ? 0 : 1) ||
         (order[a.info && a.info.status] ?? 3) - (order[b.info && b.info.status] ?? 3) ||
         a.s.patientName.localeCompare(b.s.patientName, 'ja') ||
@@ -173,19 +179,25 @@
       );
 
     const active = db.stocks.filter((s) => s.state === '在庫').map(stockStatus).filter(Boolean);
+    const pendingCount = db.stocks.filter((s) => pendingUsage(s)).length;
     const count = (k) => active.filter((i) => i.status === k).length;
     $('#stock-summary').innerHTML =
       'お守り薬 <b>' + active.length + '</b> 件　' +
       '<span class="chip red">赤 ' + count('red') + '</span>' +
       '<span class="chip yellow">黄 ' + count('yellow') + '</span>' +
-      '<span class="chip green">期限内 ' + count('green') + '</span>';
+      '<span class="chip green">期限内 ' + count('green') + '</span>' +
+      (pendingCount ? '　<span class="chip red">処方メモ未発行 ' + pendingCount + '</span>' : '');
 
-    $('#stock-table tbody').innerHTML = rows.map(({ s, info }) => {
-      const cls = s.state !== '在庫' ? 'row-closed' : info ? 'row-' + info.status : '';
-      const statusCell = s.state !== '在庫'
-        ? esc(s.state)
-        : info ? '<span class="chip ' + info.status + '">' + STATUS_LABEL[info.status] + '</span>' : '-';
-      const ops = s.state === '在庫'
+    $('#stock-table tbody').innerHTML = rows.map(({ s, info, pending }) => {
+      const cls = pending ? 'row-pending' : s.state !== '在庫' ? 'row-closed' : info ? 'row-' + info.status : '';
+      const statusCell = pending
+        ? '<span class="chip red">メモ未発行</span><br><small>使用開始 ' + fmtISO(pending.startDate) + '</small>'
+        : s.state !== '在庫'
+          ? esc(s.state)
+          : info ? '<span class="chip ' + info.status + '">' + STATUS_LABEL[info.status] + '</span>' : '-';
+      const ops = pending
+        ? '<button data-act="memo" data-id="' + s.id + '" class="primary small">処方メモ発行</button>'
+        : s.state === '在庫'
         ? (s.category === '抗菌薬' ? '<button data-act="use" data-id="' + s.id + '" class="primary small">使用開始指示</button>' : '') +
           '<button data-act="edit" data-id="' + s.id + '" class="small">編集</button>' +
           '<button data-act="discard" data-id="' + s.id + '" class="small">廃棄</button>'
@@ -218,6 +230,7 @@
     if (!s) return;
     switch (b.dataset.act) {
       case 'use': openUseDialog(s); break;
+      case 'memo': openMemo([pendingUsage(s)]); break;
       case 'edit': editStock(s); break;
       case 'discard':
         if (confirm(s.patientName + ' の「' + s.drugName + '」を廃棄済にしますか？')) {
@@ -406,7 +419,6 @@
     const target = usage || {
       startDate: L.toISO(today()),
       quantity: stock.quantity,
-      dosage: (findDrug(stock.drugName) || {}).dosage || '',
       markUsed: true,
     };
     fillForm(useForm, target);
@@ -430,7 +442,7 @@
       usage = db.usages.find((u) => u.id === f.usageId);
       Object.assign(usage, {
         startDate: f.startDate, doctorName: f.doctorName, quantity: f.quantity,
-        days: f.days, dosage: f.dosage, recorder: f.recorder, note: f.note,
+        recorder: f.recorder, note: f.note,
       });
     } else {
       const s = db.stocks.find((x) => x.id === f.stockId);
@@ -448,8 +460,6 @@
         startDate: f.startDate,
         doctorName: f.doctorName,
         quantity: f.quantity,
-        days: f.days,
-        dosage: f.dosage,
         recorder: f.recorder,
         note: f.note,
         memoIssued: false,
@@ -485,7 +495,6 @@
       '<td>' + fmtISO(u.startDate) + '</td>' +
       '<td>' + esc(u.doctorName) + '</td>' +
       '<td>' + esc(u.drugName) + '</td>' +
-      '<td>' + esc(u.dosage) + (u.days ? ' ' + esc(u.days) + '日分' : '') + '</td>' +
       '<td>' + (u.memoIssued
         ? '<span class="chip green">発行済</span><br><small>' + esc(fmtISO(u.memoIssuedAt.slice(0, 10))) + '</small>'
         : '<span class="chip red">未発行</span>') + '</td>' +
@@ -495,7 +504,7 @@
       (u.memoIssued ? '<button data-act="unissue" data-id="' + u.id + '" class="small">未発行に戻す</button>' : '') +
       '<button data-act="delete" data-id="' + u.id + '" class="small danger">削除</button>' +
       '</div></td></tr>'
-    ).join('') || '<tr><td colspan="8" class="empty">使用記録はありません</td></tr>';
+    ).join('') || '<tr><td colspan="7" class="empty">使用記録はありません</td></tr>';
   }
 
   ['#usage-search', '#usage-filter-memo'].forEach((sel) => $(sel).addEventListener('input', renderUsage));
@@ -517,27 +526,25 @@
     }
   });
 
-  // データシート形式で Excel 出力 (患者名 / 使用開始日 / 医師名 / 処方メモ発行 を先頭に配置)
+  // データシート形式で Excel 出力 (患者名 / 使用開始日 / 開始指示医師 / 処方メモ発行 を先頭に配置)
   $('#usage-export').addEventListener('click', () => {
     const rows = db.usages.slice().sort((a, b) => a.no - b.no).map((u) => ({
       'No.': u.no,
       '患者名': u.patientName,
       '使用開始日': fmtISO(u.startDate),
-      '医師名': u.doctorName,
+      '開始指示医師': u.doctorName,
       '処方メモ発行': u.memoIssued ? '済' : '未',
       'メモ発行日': u.memoIssuedAt ? fmtISO(u.memoIssuedAt.slice(0, 10)) : '',
       '患者ID': u.patientId || '',
       '区分': u.category,
       '薬剤名': u.drugName,
       '数量': u.quantity ? u.quantity + (u.unit || '') : '',
-      '日数': u.days || '',
-      '用法・用量': u.dosage || '',
       'お守り薬の処方日': fmtISO(u.prescribedDate),
       'お守り薬の処方医': u.prescriber || '',
       '記入者': u.recorder || '',
       '備考': u.note || '',
     }));
-    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'No.': '', '患者名': '', '使用開始日': '', '医師名': '', '処方メモ発行': '' }]);
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'No.': '', '患者名': '', '使用開始日': '', '開始指示医師': '', '処方メモ発行': '' }]);
     ws['!cols'] = [6, 14, 12, 12, 10, 12, 10, 10, 24, 8, 6, 24, 12, 12, 10, 20].map((w) => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'データシート');
@@ -546,15 +553,6 @@
 
   // ---------- 処方メモ ----------
   let memoTargets = [];
-
-  // 指示内容 = 薬剤名 + 用法・用量(+日数)
-  function instructionHTML(u) {
-    const lines = [esc(u.drugName)];
-    const dosage = [u.dosage, u.days ? u.days + '日分' : ''].filter(Boolean).join('　');
-    if (dosage) lines.push(esc(dosage));
-    if (u.note) lines.push(esc(u.note));
-    return lines.join('<br>');
-  }
 
   function memoHTML(u) {
     const cell = (v) => esc(v) || '&nbsp;';
@@ -567,8 +565,8 @@
         '<tr><th>患者名</th><td colspan="3" class="memo-patient">' + cell(u.patientName) + '　様' +
           (u.patientId ? '<span class="memo-pid">（ID: ' + esc(u.patientId) + '）</span>' : '') + '</td></tr>' +
         '<tr><th>使用開始日</th><td>' + fmtISO(u.startDate) + '</td>' +
-            '<th>指示医師名</th><td>' + cell(u.doctorName) + '</td></tr>' +
-        '<tr><th class="memo-inst-th">指示内容</th><td colspan="3" class="memo-inst">' + instructionHTML(u) + '</td></tr>' +
+            '<th>開始指示医師</th><td>' + cell(u.doctorName) + '</td></tr>' +
+        '<tr><th class="memo-inst-th">指示内容</th><td colspan="3" class="memo-inst">&nbsp;</td></tr>' +
         '<tr><th>指示記入日</th><td colspan="3" class="memo-date">　　　　　年　　　月　　　日</td></tr>' +
       '</table>' +
     '</div>';
