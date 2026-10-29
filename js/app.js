@@ -83,16 +83,32 @@
     return db.drugs.find((d) => d.name === name);
   }
 
-  function stockStatus(s) {
-    const p = L.parseDate(s.prescribedDate);
-    if (!p || !s.expiryMonths) return null;
-    const t = L.thresholds(p, s.expiryMonths);
+  // 実際の使用期限があればそれを優先し、無ければ処方日＋製造からの有効期限で判定する
+  function judge(prescribedDate, expiryMonths, actualExpiry) {
+    const p = L.parseDate(prescribedDate || '');
+    const ym = L.parseYearMonth(actualExpiry || '');
+    let t;
+    if (ym) t = L.actualThresholds(ym);
+    else if (p && expiryMonths) t = L.thresholds(p, expiryMonths);
+    else return null;
     return {
-      status: L.statusOf(p, s.expiryMonths, today()),
+      status: L.statusByThresholds(t, today()),
       yellow: t.yellow,
       red: t.red,
-      elapsed: L.elapsedText(p, today()),
+      actual: !!ym,
+      elapsed: p ? L.elapsedText(p, today()) : '',
     };
+  }
+
+  function stockStatus(s) {
+    return judge(s.prescribedDate, s.expiryMonths, s.actualExpiry);
+  }
+
+  function expiryLabel(s) {
+    const ym = L.parseYearMonth(s.actualExpiry || '');
+    return (ym ? '<b>' + ym.y + '年' + ym.m + '月まで</b><br><small>実際の期限</small>' : '') +
+      (ym && s.expiryMonths ? '<br>' : '') +
+      (s.expiryMonths ? (ym ? '<small>製造から ' + L.monthsText(s.expiryMonths) + '</small>' : L.monthsText(s.expiryMonths)) : '');
   }
 
   const STATUS_LABEL = { green: '期限内', yellow: '黄', red: '赤' };
@@ -183,7 +199,7 @@
         '<td class="num">' + esc(s.quantity) + esc(s.unit) + '</td>' +
         '<td>' + fmtISO(s.prescribedDate) + '</td>' +
         '<td>' + (info ? esc(info.elapsed) : '') + '</td>' +
-        '<td>' + L.monthsText(s.expiryMonths) + '</td>' +
+        '<td>' + expiryLabel(s) + '</td>' +
         '<td>' + (info ? L.formatDate(info.yellow) : '') + '</td>' +
         '<td>' + (info ? L.formatDate(info.red) : '') + '</td>' +
         '<td>' + esc(s.prescriber) + '</td>' +
@@ -236,10 +252,12 @@
       '<label>薬剤名 <span class="req">*</span><input data-f="drugName" list="dl-drugs" required placeholder="薬剤マスタから入力補助されます"><small class="hint" data-r="hint"></small></label>' +
       '<label>区分 <span class="req">*</span><select data-f="category" required>' + categoryOptions() + '</select></label>' +
       '<label>数量<span class="inline"><input data-f="quantity" type="number" min="0" step="any"><input data-f="unit" class="unit" placeholder="錠"></span></label>' +
-      '<label>有効期限（製造から） <span class="req">*</span><span class="inline">' +
+      '<label>有効期限（製造から）<span class="inline">' +
         '<input data-f="expiryYears" type="number" min="0" step="1" class="short"> 年 ' +
         '<input data-f="expiryMonthsRest" type="number" min="0" max="11" step="1" class="short"> ヶ月</span>' +
         '<small class="hint">薬剤マスタの値が自動で入ります。個別に変更も可能です。</small></label>' +
+      '<label>実際の使用期限（任意）<input data-f="actualExpiry" type="month">' +
+        '<small class="hint">薬局等で確認できた場合のみ。「2027年10月まで」なら 2027年10月 と入力（月末まで有効として判定）。入力すると製造からの期限より優先され、期限まで1年未満で黄色、期限を超えると赤色になります。</small></label>' +
       '<label class="wide">備考<input data-f="note"></label>' +
       '<div class="preview wide" data-r="preview"></div>' +
       '</div>';
@@ -250,6 +268,7 @@
     f('quantity').value = v.quantity || '';
     f('unit').value = v.unit || '';
     f('note').value = v.note || '';
+    f('actualExpiry').value = v.actualExpiry || '';
     f('expiryYears').value = v.expiryMonths ? Math.floor(v.expiryMonths / 12) : '';
     f('expiryMonthsRest').value = v.expiryMonths ? v.expiryMonths % 12 : '';
     renumberRows();
@@ -271,14 +290,11 @@
   }
 
   function updateRowPreview(row) {
-    const p = L.parseDate(stockForm.prescribedDate.value);
-    const m = rowExpiry(row);
-    $('[data-r=preview]', row).innerHTML = p && m
-      ? (() => {
-        const t = L.thresholds(p, m);
-        return '<span class="chip yellow">黄色</span> ' + L.formatDate(t.yellow) + ' から　' +
-          '<span class="chip red">赤色</span> ' + L.formatDate(t.red) + ' から';
-      })()
+    const j = judge(stockForm.prescribedDate.value, rowExpiry(row), $('[data-f=actualExpiry]', row).value);
+    $('[data-r=preview]', row).innerHTML = j
+      ? (j.actual ? '（実際の使用期限で判定）　' : '') +
+        '<span class="chip yellow">黄色</span> ' + L.formatDate(j.yellow) + ' から　' +
+        '<span class="chip red">赤色</span> ' + L.formatDate(j.red) + ' から'
       : '';
   }
 
@@ -349,7 +365,8 @@
     for (let i = 0; i < rows.length; i++) {
       const g = (n) => $('[data-f=' + n + ']', rows[i]).value.trim();
       const expiryMonths = rowExpiry(rows[i]);
-      if (!expiryMonths) { alert('薬剤 ' + (i + 1) + '：有効期限を入力してください。'); return; }
+      const actualExpiry = g('actualExpiry');
+      if (!expiryMonths && !actualExpiry) { alert('薬剤 ' + (i + 1) + '：製造からの有効期限、または実際の使用期限を入力してください。'); return; }
       recs.push({
         patientName: f.patientName,
         patientId: f.patientId,
@@ -359,6 +376,7 @@
         unit: g('unit'),
         prescribedDate: f.prescribedDate,
         expiryMonths: expiryMonths,
+        actualExpiry: actualExpiry,
         prescriber: f.prescriber,
         note: g('note'),
       });
@@ -825,8 +843,43 @@
   // ---------- 設定・バックアップ ----------
   const settingsForm = $('#settings-form');
 
+  function renderDoctors() {
+    $('#doctor-list').innerHTML = db.settings.doctors.map((n, i) =>
+      '<li><span>' + esc(n) + '</span><button type="button" class="small danger" data-i="' + i + '">削除</button></li>'
+    ).join('') || '<li class="empty">登録されていません</li>';
+  }
+
+  function addDoctor() {
+    const input = $('#doctor-input');
+    const name = input.value.trim();
+    if (!name) return;
+    if (!db.settings.doctors.includes(name)) {
+      db.settings.doctors.push(name);
+      save();
+    }
+    input.value = '';
+    render();
+    input.focus();
+  }
+
+  $('#doctor-add').addEventListener('click', addDoctor);
+  $('#doctor-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addDoctor(); }
+  });
+  $('#doctor-list').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-i]');
+    if (!b) return;
+    const name = db.settings.doctors[Number(b.dataset.i)];
+    if (confirm('処方医「' + name + '」を削除しますか？（登録済みのお守り薬の処方医は変わりません）')) {
+      db.settings.doctors.splice(Number(b.dataset.i), 1);
+      save();
+      render();
+    }
+  });
+
   function renderSettings() {
-    fillForm(settingsForm, Object.assign({}, db.settings, { doctors: db.settings.doctors.join('\n') }));
+    fillForm(settingsForm, db.settings);
+    renderDoctors();
   }
 
   settingsForm.addEventListener('submit', (e) => {
@@ -834,7 +887,7 @@
     const f = formData(settingsForm);
     db.settings = {
       memoTitle: f.memoTitle || DEFAULT_SETTINGS.memoTitle,
-      doctors: f.doctors.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
+      doctors: db.settings.doctors,
     };
     save();
     render();

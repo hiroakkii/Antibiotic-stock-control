@@ -80,6 +80,33 @@
     return 'green';
   }
 
+  // "2027-10" → { y: 2027, m: 10 }。不正なら null
+  function parseYearMonth(value) {
+    const m = typeof value === 'string' && value.trim().match(/^(\d{4})[-/](\d{1,2})$/);
+    if (!m || Number(m[2]) < 1 || Number(m[2]) > 12) return null;
+    return { y: Number(m[1]), m: Number(m[2]) };
+  }
+
+  /*
+   * 実際の使用期限（「2027年10月まで」のように月までの表記）からの判定日。
+   *   期限日 : その月の末日まで有効
+   *   黄色   : 期限日まで1年未満になる日 = 期限月の11ヶ月前の1日
+   *   赤色   : 期限を超えた日 = 期限月の翌月1日
+   */
+  function actualThresholds(ym) {
+    return {
+      end: new Date(ym.y, ym.m, 0),
+      yellow: new Date(ym.y, ym.m - 1 - 11, 1),
+      red: new Date(ym.y, ym.m, 1),
+    };
+  }
+
+  function statusByThresholds(t, today) {
+    if (diffDays(t.red, today) >= 0) return 'red';
+    if (diffDays(t.yellow, today) >= 0) return 'yellow';
+    return 'green';
+  }
+
   // 経過期間を「1年2ヶ月3日」の形で返す
   function elapsedText(from, to) {
     if (diffDays(from, to) < 0) return '処方日前';
@@ -111,6 +138,9 @@
     diffDays: diffDays,
     thresholds: thresholds,
     statusOf: statusOf,
+    parseYearMonth: parseYearMonth,
+    actualThresholds: actualThresholds,
+    statusByThresholds: statusByThresholds,
     elapsedText: elapsedText,
     monthsText: monthsText,
   };

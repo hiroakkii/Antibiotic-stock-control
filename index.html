@@ -74,7 +74,7 @@
           <input name="prescribedDate" type="date" required>
         </label>
         <label>処方医
-          <input name="prescriber" list="dl-doctors">
+          <input name="prescriber" list="dl-doctors" placeholder="登録済みの医師から選択">
         </label>
         <div class="wide" id="drug-rows"></div>
         <div class="buttons wide" id="drug-add-wrap">
@@ -162,13 +162,18 @@
 
     <!-- 設定 -->
     <section id="tab-settings" class="tab">
+      <h2>処方医の登録</h2>
+      <p class="hint">ここに登録した医師が、お守り薬登録の「処方医」と使用開始指示の「指示医師名」の入力候補になります。</p>
+      <div class="toolbar">
+        <input id="doctor-input" placeholder="医師名（例: 山田 太郎）">
+        <button type="button" id="doctor-add" class="primary">追加</button>
+      </div>
+      <ul class="doctor-list" id="doctor-list"></ul>
+
       <h2>処方メモの設定</h2>
       <form id="settings-form" class="form">
         <label>メモの表題
           <input name="memoTitle">
-        </label>
-        <label class="wide">医師名リスト（1行に1名。入力補助に使われます）
-          <textarea name="doctors" rows="4"></textarea>
         </label>
         <div class="buttons wide"><button type="submit" class="primary">設定を保存</button></div>
       </form>

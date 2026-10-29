@@ -45,3 +45,24 @@ test('不正な日付は null', () => {
   assert.equal(L.parseDate('abc'), null);
   assert.equal(fmt(L.parseDate('2026-10-29')), '2026/10/29');
 });
+
+test('実際の使用期限: 月末まで有効、1年未満で黄色、超過で赤色', () => {
+  const t = L.actualThresholds(L.parseYearMonth('2027-10'));
+  assert.equal(fmt(t.end), '2027/10/31');
+  assert.equal(fmt(t.yellow), '2026/11/01');
+  assert.equal(fmt(t.red), '2027/11/01');
+  const st = (s) => L.statusByThresholds(t, d(s));
+  assert.equal(st('2026/10/31'), 'green'); // 残りちょうど1年
+  assert.equal(st('2026/11/01'), 'yellow'); // 1年未満
+  assert.equal(st('2027/10/31'), 'yellow'); // 期限当日まで有効
+  assert.equal(st('2027/11/01'), 'red');
+});
+
+test('年月の解析', () => {
+  assert.deepEqual(L.parseYearMonth('2027-01'), { y: 2027, m: 1 });
+  assert.equal(L.parseYearMonth('2027-13'), null);
+  assert.equal(L.parseYearMonth(''), null);
+  const t = L.actualThresholds({ y: 2027, m: 2 });
+  assert.equal(fmt(t.end), '2027/02/28');
+  assert.equal(fmt(t.yellow), '2026/03/01');
+});
