@@ -141,7 +141,8 @@
       </div>
       <p class="hint">
         1行目を見出し行とし、<b>区分</b>（抗菌薬／解熱鎮痛薬）・<b>薬剤名</b>・<b>有効期限(年)</b> または <b>有効期限(月)</b> の列を読み込みます。
-        <b>規格</b>・<b>単位</b>・<b>用法用量</b>・<b>コード</b> 列があれば併せて取り込みます。列の順番は問いません。
+        <b>規格</b>・<b>単位</b>・<b>用法用量</b>・<b>コード</b> 列があれば併せて取り込みます。列の順番は問いません。<br>
+        <code>master/医薬品マスタ_内用外用.xlsx</code> を読み込む場合は、「薬効分類マスタ」シートで <b>対象区分</b>（抗菌薬／解熱鎮痛薬）を設定した分類の医薬品だけが取り込まれます。
       </p>
       <div class="table-wrap">
         <table class="list" id="master-table">
@@ -157,14 +158,8 @@
     <section id="tab-settings" class="tab">
       <h2>処方メモの設定</h2>
       <form id="settings-form" class="form">
-        <label>施設名（メモ上部に表示）
-          <input name="facilityName">
-        </label>
         <label>メモの表題
           <input name="memoTitle">
-        </label>
-        <label class="wide">メモの依頼文
-          <textarea name="memoMessage" rows="2"></textarea>
         </label>
         <label class="wide">医師名リスト（1行に1名。入力補助に使われます）
           <textarea name="doctors" rows="4"></textarea>

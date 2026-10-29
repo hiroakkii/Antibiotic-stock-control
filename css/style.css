@@ -168,7 +168,7 @@ body.memo-open .memo-overlay {
   padding: 12mm 12mm;
   font-size: 14px;
 }
-.memo-head { display: flex; justify-content: space-between; font-size: 13px; }
+.memo-head { display: flex; justify-content: flex-end; font-size: 13px; }
 .memo-title {
   text-align: center;
   font-size: 22px;
@@ -184,7 +184,10 @@ body.memo-open .memo-overlay {
 .memo-table td { width: 32%; }
 .memo-patient, .memo-drug { font-size: 18px; font-weight: bold; }
 .memo-pid { font-size: 13px; font-weight: normal; margin-left: 8px; }
-.memo-sign { height: 3.2em; text-align: right; }
+.memo-inst-th { height: 9em; }
+.memo-inst { height: 9em; vertical-align: top; font-size: 18px; line-height: 1.7; }
+.memo-inst :first-line { font-weight: bold; }
+.memo-date { height: 3em; font-size: 16px; }
 
 @media print {
   @page { size: A4; margin: 10mm; }

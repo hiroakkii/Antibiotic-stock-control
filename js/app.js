@@ -7,9 +7,7 @@
   const CATEGORIES = ['抗菌薬', '解熱鎮痛薬'];
 
   const DEFAULT_SETTINGS = {
-    facilityName: '',
-    memoTitle: '処方メモ（在庫薬使用）',
-    memoMessage: '患者宅の在庫薬を下記のとおり使用開始しました。処方をお願いいたします。',
+    memoTitle: '処方メモ（お守り薬）',
     doctors: [],
   };
 
@@ -24,11 +22,13 @@
       data = null;
     }
     data = data || {};
+    const saved = data.settings || {};
+    if (saved.memoTitle === '処方メモ（在庫薬使用）') delete saved.memoTitle; // 旧初期値は新しい表題に置き換える
     return {
       drugs: data.drugs || [],
       stocks: data.stocks || [],
       usages: data.usages || [],
-      settings: Object.assign({}, DEFAULT_SETTINGS, data.settings || {}),
+      settings: Object.assign({}, DEFAULT_SETTINGS, saved),
       nextUsageNo: data.nextUsageNo || 1,
     };
   }
@@ -450,32 +450,29 @@
   // ---------- 処方メモ ----------
   let memoTargets = [];
 
+  // 指示内容 = 薬剤名 + 用法・用量(+日数)
+  function instructionHTML(u) {
+    const lines = [esc(u.drugName)];
+    const dosage = [u.dosage, u.days ? u.days + '日分' : ''].filter(Boolean).join('　');
+    if (dosage) lines.push(esc(dosage));
+    if (u.note) lines.push(esc(u.note));
+    return lines.join('<br>');
+  }
+
   function memoHTML(u) {
-    const st = db.settings;
     const cell = (v) => esc(v) || '&nbsp;';
     return '<div class="memo">' +
       '<div class="memo-head">' +
-        '<div class="memo-facility">' + esc(st.facilityName) + '</div>' +
         '<div class="memo-no">No. ' + u.no + '　発行日 ' + (u.memoIssued ? fmtISO(u.memoIssuedAt.slice(0, 10)) : L.formatDate(today())) + '</div>' +
       '</div>' +
-      '<h2 class="memo-title">' + esc(st.memoTitle) + '</h2>' +
-      '<p class="memo-message">' + esc(st.memoMessage) + '</p>' +
+      '<h2 class="memo-title">' + esc(db.settings.memoTitle) + '</h2>' +
       '<table class="memo-table">' +
         '<tr><th>患者名</th><td colspan="3" class="memo-patient">' + cell(u.patientName) + '　様' +
           (u.patientId ? '<span class="memo-pid">（ID: ' + esc(u.patientId) + '）</span>' : '') + '</td></tr>' +
         '<tr><th>使用開始日</th><td>' + fmtISO(u.startDate) + '</td>' +
             '<th>指示医師名</th><td>' + cell(u.doctorName) + '</td></tr>' +
-        '<tr><th>区分</th><td>' + cell(u.category) + '</td>' +
-            '<th>数量</th><td>' + (u.quantity ? esc(u.quantity) + esc(u.unit || '') : '&nbsp;') + '</td></tr>' +
-        '<tr><th>薬剤名</th><td colspan="3" class="memo-drug">' + cell(u.drugName) + '</td></tr>' +
-        '<tr><th>用法・用量</th><td colspan="3">' + cell(u.dosage) + (u.days ? '　' + esc(u.days) + '日分' : '') + '</td></tr>' +
-        '<tr><th>在庫薬の処方日</th><td>' + fmtISO(u.prescribedDate) + '</td>' +
-            '<th>在庫薬の処方医</th><td>' + cell(u.prescriber) + '</td></tr>' +
-        '<tr><th>備考</th><td colspan="3">' + cell(u.note) + '</td></tr>' +
-        '<tr><th>記入者</th><td>' + cell(u.recorder) + '</td>' +
-            '<th>医師確認</th><td class="memo-sign">　　　　　　　　印</td></tr>' +
-        '<tr><th>処方入力</th><td>□ 済　　　月　　日</td>' +
-            '<th>入力者</th><td>&nbsp;</td></tr>' +
+        '<tr><th class="memo-inst-th">指示内容</th><td colspan="3" class="memo-inst">' + instructionHTML(u) + '</td></tr>' +
+        '<tr><th>指示記入日</th><td colspan="3" class="memo-date">　　　　　年　　　月　　　日</td></tr>' +
       '</table>' +
     '</div>';
   }
@@ -508,8 +505,8 @@
   // ---------- 薬剤マスタ ----------
   // 見出しの表記ゆれを吸収して列を特定する
   const HEADER_ALIASES = {
-    code: ['コード', '薬剤コード', 'yjコード', 'ｺｰﾄﾞ'],
-    category: ['区分', '分類', '種別', '薬効分類'],
+    code: ['コード', '薬剤コード', 'yjコード', 'ｺｰﾄﾞ', '薬価基準収載医薬品コード'],
+    category: ['対象区分', '区分', '分類', '種別', '薬効分類'],
     name: ['薬剤名', '医薬品名', '品名', '商品名', '名称', '薬品名'],
     spec: ['規格', '規格単位', '含量'],
     unit: ['単位'],
@@ -541,25 +538,31 @@
         else col.expiryY = col.expiryY || h; // 「有効期限(年)」「有効期限」は年として扱う
       }
     });
+    // 「対象区分」列がある場合は最優先。その場合「区分」列(内用薬/外用薬)は剤形として扱う
+    const explicit = headers.find((h) => normHeader(h) === '対象区分');
+    if (explicit) col.category = explicit;
+    const formCol = explicit ? headers.find((h) => normHeader(h) === '区分') : null;
     if (!col.name) throw new Error('「薬剤名」の列が見つかりません。');
     if (!col.expiryY && !col.expiryM) throw new Error('「有効期限(年)」または「有効期限(月)」の列が見つかりません。');
 
     let skipped = 0;
     const drugs = [];
     rows.forEach((r) => {
-      const name = String(r[col.name] || '').trim();
+      const name = String(r[col.name] || '').trim().normalize('NFKC'); // 全角英数(２００ｍｇ)を半角に揃え、入力しやすくする
       if (!name) return;
       const years = col.expiryY ? parseFloat(String(r[col.expiryY]).replace(/[^\d.]/g, '')) || 0 : 0;
       const months = col.expiryM ? parseFloat(String(r[col.expiryM]).replace(/[^\d.]/g, '')) || 0 : 0;
       const expiryMonths = Math.round(years * 12 + months);
       const category = normCategory(col.category ? r[col.category] : '');
+      if (explicit && !category) return; // 対象外の医薬品は黙って除外
       if (!expiryMonths || !category) { skipped++; return; }
       drugs.push({
         id: uid(),
         code: col.code ? String(r[col.code] || '').trim() : '',
         category: category,
         name: name,
-        spec: col.spec ? String(r[col.spec] || '').trim() : '',
+        form: formCol ? String(r[formCol] || '').trim() : '',
+        spec: col.spec ? String(r[col.spec] || '').trim().normalize('NFKC') : '',
         unit: col.unit ? String(r[col.unit] || '').trim() : '',
         dosage: col.dosage ? String(r[col.dosage] || '').trim() : '',
         expiryMonths: expiryMonths,
@@ -574,7 +577,8 @@
     if (!file) return;
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-      const name = wb.SheetNames.find((n) => /マスタ|master/i.test(n)) || wb.SheetNames[0];
+      const name = ['薬剤マスタ', '医薬品マスタ'].find((n) => wb.SheetNames.includes(n)) ||
+        wb.SheetNames.find((n) => /マスタ|master/i.test(n)) || wb.SheetNames[0];
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: '', raw: false });
       const result = parseMasterRows(rows);
       if (!result.drugs.length) throw new Error('取り込める薬剤がありませんでした。');
@@ -667,9 +671,7 @@
     e.preventDefault();
     const f = formData(settingsForm);
     db.settings = {
-      facilityName: f.facilityName,
       memoTitle: f.memoTitle || DEFAULT_SETTINGS.memoTitle,
-      memoMessage: f.memoMessage,
       doctors: f.doctors.split(/\r?\n/).map((s) => s.trim()).filter(Boolean),
     };
     save();
