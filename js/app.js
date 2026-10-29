@@ -186,7 +186,7 @@
         ? esc(s.state)
         : info ? '<span class="chip ' + info.status + '">' + STATUS_LABEL[info.status] + '</span>' : '-';
       const ops = s.state === '在庫'
-        ? '<button data-act="use" data-id="' + s.id + '" class="primary small">使用開始指示</button>' +
+        ? (s.category === '抗菌薬' ? '<button data-act="use" data-id="' + s.id + '" class="primary small">使用開始指示</button>' : '') +
           '<button data-act="edit" data-id="' + s.id + '" class="small">編集</button>' +
           '<button data-act="discard" data-id="' + s.id + '" class="small">廃棄</button>'
         : '<button data-act="restore" data-id="' + s.id + '" class="small">お守り薬に戻す</button>' +
