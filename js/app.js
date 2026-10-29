@@ -159,7 +159,7 @@
     const active = db.stocks.filter((s) => s.state === '在庫').map(stockStatus).filter(Boolean);
     const count = (k) => active.filter((i) => i.status === k).length;
     $('#stock-summary').innerHTML =
-      '在庫 <b>' + active.length + '</b> 件　' +
+      'お守り薬 <b>' + active.length + '</b> 件　' +
       '<span class="chip red">赤 ' + count('red') + '</span>' +
       '<span class="chip yellow">黄 ' + count('yellow') + '</span>' +
       '<span class="chip green">期限内 ' + count('green') + '</span>';
@@ -173,7 +173,7 @@
         ? '<button data-act="use" data-id="' + s.id + '" class="primary small">使用開始指示</button>' +
           '<button data-act="edit" data-id="' + s.id + '" class="small">編集</button>' +
           '<button data-act="discard" data-id="' + s.id + '" class="small">廃棄</button>'
-        : '<button data-act="restore" data-id="' + s.id + '" class="small">在庫に戻す</button>' +
+        : '<button data-act="restore" data-id="' + s.id + '" class="small">お守り薬に戻す</button>' +
           '<button data-act="delete" data-id="' + s.id + '" class="small danger">削除</button>';
       return '<tr class="' + cls + '">' +
         '<td>' + statusCell + '</td>' +
@@ -189,7 +189,7 @@
         '<td>' + esc(s.prescriber) + '</td>' +
         '<td><div class="ops">' + ops + '</div></td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="12" class="empty">該当する在庫はありません</td></tr>';
+    }).join('') || '<tr><td colspan="12" class="empty">該当するお守り薬はありません</td></tr>';
   }
 
   ['#stock-search', '#stock-filter-category', '#stock-filter-status', '#stock-show-closed'].forEach((sel) =>
@@ -210,41 +210,96 @@
         break;
       case 'restore': s.state = '在庫'; save(); render(); break;
       case 'delete':
-        if (confirm('この在庫データを削除します。よろしいですか？（使用記録は残ります）')) {
+        if (confirm('このお守り薬のデータを削除します。よろしいですか？（使用記録は残ります）')) {
           db.stocks = db.stocks.filter((x) => x !== s); save(); render();
         }
         break;
     }
   });
 
-  // ---------- 在庫登録 ----------
+  // ---------- お守り薬登録 ----------
   const stockForm = $('#stock-form');
+  const rowsBox = $('#drug-rows');
+  let editingId = '';
 
-  function setExpiryFields(months) {
-    stockForm.expiryYears.value = months ? Math.floor(months / 12) : '';
-    stockForm.expiryMonthsRest.value = months ? months % 12 : '';
+  function categoryOptions() {
+    return CATEGORIES.map((c) => '<option>' + c + '</option>').join('');
   }
 
-  function expiryFromFields() {
-    return (Number(stockForm.expiryYears.value) || 0) * 12 + (Number(stockForm.expiryMonthsRest.value) || 0);
+  function addDrugRow(values) {
+    const v = values || {};
+    const row = document.createElement('div');
+    row.className = 'drug-row';
+    row.innerHTML =
+      '<div class="drug-row-head"><b class="drug-no"></b><button type="button" class="small danger" data-act="remove-row">この薬剤を削除</button></div>' +
+      '<div class="form drug-row-body">' +
+      '<label>薬剤名 <span class="req">*</span><input data-f="drugName" list="dl-drugs" required placeholder="薬剤マスタから入力補助されます"><small class="hint" data-r="hint"></small></label>' +
+      '<label>区分 <span class="req">*</span><select data-f="category" required>' + categoryOptions() + '</select></label>' +
+      '<label>数量<span class="inline"><input data-f="quantity" type="number" min="0" step="any"><input data-f="unit" class="unit" placeholder="錠"></span></label>' +
+      '<label>有効期限（製造から） <span class="req">*</span><span class="inline">' +
+        '<input data-f="expiryYears" type="number" min="0" step="1" class="short"> 年 ' +
+        '<input data-f="expiryMonthsRest" type="number" min="0" max="11" step="1" class="short"> ヶ月</span>' +
+        '<small class="hint">薬剤マスタの値が自動で入ります。個別に変更も可能です。</small></label>' +
+      '<label class="wide">備考<input data-f="note"></label>' +
+      '<div class="preview wide" data-r="preview"></div>' +
+      '</div>';
+    rowsBox.appendChild(row);
+    const f = (n) => $('[data-f=' + n + ']', row);
+    f('drugName').value = v.drugName || '';
+    f('category').value = v.category || CATEGORIES[0];
+    f('quantity').value = v.quantity || '';
+    f('unit').value = v.unit || '';
+    f('note').value = v.note || '';
+    f('expiryYears').value = v.expiryMonths ? Math.floor(v.expiryMonths / 12) : '';
+    f('expiryMonthsRest').value = v.expiryMonths ? v.expiryMonths % 12 : '';
+    renumberRows();
+    updateRowPreview(row);
+    return row;
+  }
+
+  function renumberRows() {
+    const rows = $$('.drug-row', rowsBox);
+    rows.forEach((r, i) => {
+      $('.drug-no', r).textContent = '薬剤 ' + (i + 1);
+      $('[data-act=remove-row]', r).style.display = rows.length > 1 && !editingId ? '' : 'none';
+    });
+    $('#drug-add-wrap').style.display = editingId ? 'none' : '';
+  }
+
+  function rowExpiry(row) {
+    return (Number($('[data-f=expiryYears]', row).value) || 0) * 12 + (Number($('[data-f=expiryMonthsRest]', row).value) || 0);
+  }
+
+  function updateRowPreview(row) {
+    const p = L.parseDate(stockForm.prescribedDate.value);
+    const m = rowExpiry(row);
+    $('[data-r=preview]', row).innerHTML = p && m
+      ? (() => {
+        const t = L.thresholds(p, m);
+        return '<span class="chip yellow">黄色</span> ' + L.formatDate(t.yellow) + ' から　' +
+          '<span class="chip red">赤色</span> ' + L.formatDate(t.red) + ' から';
+      })()
+      : '';
   }
 
   function resetStockForm() {
+    editingId = '';
     stockForm.reset();
     stockForm.id.value = '';
     stockForm.prescribedDate.value = L.toISO(today());
-    $('#register-title').textContent = '在庫登録';
-    $('#drug-hint').textContent = '';
-    updateRegisterPreview();
+    rowsBox.innerHTML = '';
+    addDrugRow();
+    $('#register-title').textContent = 'お守り薬登録';
   }
 
   function editStock(s) {
     resetStockForm();
+    editingId = s.id;
     fillForm(stockForm, s);
-    setExpiryFields(s.expiryMonths);
-    $('#register-title').textContent = '在庫の編集';
+    rowsBox.innerHTML = '';
+    addDrugRow(s);
+    $('#register-title').textContent = 'お守り薬の編集';
     showTab('register');
-    updateRegisterPreview();
   }
 
   // 患者マスタにある患者名を選んだら、患者IDを自動で入れる
@@ -253,56 +308,69 @@
     if (p && p.id) stockForm.patientId.value = p.id;
   });
 
-  stockForm.drugName.addEventListener('input', () => {
-    const d = findDrug(stockForm.drugName.value);
-    if (d) {
-      stockForm.category.value = d.category;
-      setExpiryFields(d.expiryMonths);
-      if (d.unit) stockForm.unit.value = d.unit;
-      $('#drug-hint').textContent = '薬剤マスタ: ' + d.category + (d.spec ? ' / ' + d.spec : '') + ' / 有効期限 ' + L.monthsText(d.expiryMonths);
-    } else {
-      $('#drug-hint').textContent = stockForm.drugName.value && db.drugs.length ? 'マスタに無い薬剤です（区分・有効期限を手入力してください）' : '';
+  stockForm.prescribedDate.addEventListener('input', () => $$('.drug-row', rowsBox).forEach(updateRowPreview));
+
+  rowsBox.addEventListener('input', (e) => {
+    const row = e.target.closest('.drug-row');
+    if (!row) return;
+    const f = (n) => $('[data-f=' + n + ']', row);
+    if (e.target === f('drugName')) {
+      const d = findDrug(f('drugName').value);
+      if (d) {
+        f('category').value = d.category;
+        f('expiryYears').value = Math.floor(d.expiryMonths / 12) || '';
+        f('expiryMonthsRest').value = d.expiryMonths % 12 || '';
+        if (d.unit) f('unit').value = d.unit;
+        $('[data-r=hint]', row).textContent = '薬剤マスタ: ' + d.category + (d.spec ? ' / ' + d.spec : '') + ' / 有効期限 ' + L.monthsText(d.expiryMonths);
+      } else {
+        $('[data-r=hint]', row).textContent = f('drugName').value && db.drugs.length ? 'マスタに無い薬剤です（区分・有効期限を手入力してください）' : '';
+      }
     }
-    updateRegisterPreview();
+    updateRowPreview(row);
   });
 
-  ['prescribedDate', 'expiryYears', 'expiryMonthsRest'].forEach((n) =>
-    stockForm[n].addEventListener('input', updateRegisterPreview));
+  rowsBox.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act=remove-row]');
+    if (!b) return;
+    b.closest('.drug-row').remove();
+    renumberRows();
+  });
 
-  function updateRegisterPreview() {
-    const p = L.parseDate(stockForm.prescribedDate.value);
-    const m = expiryFromFields();
-    if (!p || !m) { $('#register-preview').innerHTML = ''; return; }
-    const t = L.thresholds(p, m);
-    $('#register-preview').innerHTML =
-      '<span class="chip yellow">黄色</span> ' + L.formatDate(t.yellow) + ' から　' +
-      '<span class="chip red">赤色</span> ' + L.formatDate(t.red) + ' から';
-  }
+  $('#drug-add').addEventListener('click', () => {
+    addDrugRow().querySelector('[data-f=drugName]').focus();
+  });
 
   stockForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const f = formData(stockForm);
-    const expiryMonths = expiryFromFields();
-    if (!expiryMonths) { alert('有効期限を入力してください。'); return; }
     if (!L.parseDate(f.prescribedDate)) { alert('処方日を正しく入力してください。'); return; }
-    const rec = {
-      patientName: f.patientName,
-      patientId: f.patientId,
-      drugName: f.drugName,
-      category: f.category,
-      quantity: f.quantity,
-      unit: f.unit,
-      prescribedDate: f.prescribedDate,
-      expiryMonths: expiryMonths,
-      prescriber: f.prescriber,
-      note: f.note,
-    };
-    if (f.id) {
-      Object.assign(db.stocks.find((s) => s.id === f.id), rec);
+    const recs = [];
+    const rows = $$('.drug-row', rowsBox);
+    for (let i = 0; i < rows.length; i++) {
+      const g = (n) => $('[data-f=' + n + ']', rows[i]).value.trim();
+      const expiryMonths = rowExpiry(rows[i]);
+      if (!expiryMonths) { alert('薬剤 ' + (i + 1) + '：有効期限を入力してください。'); return; }
+      recs.push({
+        patientName: f.patientName,
+        patientId: f.patientId,
+        drugName: g('drugName'),
+        category: g('category'),
+        quantity: g('quantity'),
+        unit: g('unit'),
+        prescribedDate: f.prescribedDate,
+        expiryMonths: expiryMonths,
+        prescriber: f.prescriber,
+        note: g('note'),
+      });
+    }
+    if (editingId) {
+      Object.assign(db.stocks.find((s) => s.id === editingId), recs[0]);
     } else {
-      db.stocks.push(Object.assign({ id: uid(), state: '在庫', createdAt: new Date().toISOString() }, rec));
+      const now = new Date().toISOString();
+      recs.forEach((r) => db.stocks.push(Object.assign({ id: uid(), state: '在庫', createdAt: now }, r)));
     }
     save();
+    if (!editingId && recs.length > 1) alert(recs.length + ' 種類のお守り薬を登録しました。');
     resetStockForm();
     showTab('stock');
   });
@@ -327,7 +395,7 @@
     const src = usage || stock;
     $('#use-target').innerHTML =
       '<b>' + esc(src.patientName) + '</b> 様　' + esc(src.drugName) +
-      '（' + esc(src.category) + '）　在庫の処方日 ' + fmtISO(src.prescribedDate);
+      '（' + esc(src.category) + '）　お守り薬の処方日 ' + fmtISO(src.prescribedDate);
     $('#use-unit').textContent = src.unit || '';
     useForm.markUsed.closest('label').style.display = usage ? 'none' : '';
     useDialog.showModal();
@@ -446,8 +514,8 @@
       '数量': u.quantity ? u.quantity + (u.unit || '') : '',
       '日数': u.days || '',
       '用法・用量': u.dosage || '',
-      '在庫の処方日': fmtISO(u.prescribedDate),
-      '在庫の処方医': u.prescriber || '',
+      'お守り薬の処方日': fmtISO(u.prescribedDate),
+      'お守り薬の処方医': u.prescriber || '',
       '記入者': u.recorder || '',
       '備考': u.note || '',
     }));
@@ -737,7 +805,7 @@
   });
 
   $('#patient-clear').addEventListener('click', () => {
-    if (db.patients.length && confirm('患者マスタ ' + db.patients.length + ' 名を削除します。在庫データには影響しません。よろしいですか？')) {
+    if (db.patients.length && confirm('患者マスタ ' + db.patients.length + ' 名を削除します。お守り薬のデータには影響しません。よろしいですか？')) {
       db.patients = []; save(); render();
     }
   });

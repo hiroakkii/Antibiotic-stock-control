@@ -199,3 +199,7 @@ body.memo-open .memo-overlay {
   .memo:last-child { page-break-after: auto; }
   .memo-table th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+.drug-row { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; background: #fafcff; }
+.drug-row-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; background: #e8f0fa; border-radius: 6px 6px 0 0; }
+.drug-row .drug-row-body { border: none; background: transparent; max-width: none; }
