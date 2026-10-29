@@ -215,18 +215,15 @@
       return '<tr class="' + cls + '">' +
         '<td>' + statusCell + '</td>' +
         '<td>' + esc(s.patientName) + (s.patientId ? '<br><small>' + esc(s.patientId) + '</small>' : '') + '</td>' +
-        '<td>' + esc(s.category) + '</td>' +
-        '<td>' + esc(s.drugName) + '</td>' +
+        '<td>' + esc(s.drugName) + '<br><small>' + esc(s.category) + '</small></td>' +
         '<td class="num">' + esc(s.quantity) + esc(s.unit) + '</td>' +
-        '<td>' + fmtISO(s.prescribedDate) + '</td>' +
-        '<td>' + (info ? esc(info.elapsed) : '') + '</td>' +
+        '<td>' + fmtISO(s.prescribedDate) + (info ? '<br><small>' + esc(info.elapsed) + '</small>' : '') + '</td>' +
         '<td>' + expiryLabel(s) + '</td>' +
-        '<td>' + (info ? L.formatDate(info.yellow) : '') + '</td>' +
-        '<td>' + (info ? L.formatDate(info.red) : '') + '</td>' +
+        '<td>' + (info ? '<span class="dot yellow"></span>' + L.formatDate(info.yellow) + '<br><span class="dot red"></span>' + L.formatDate(info.red) : '') + '</td>' +
         '<td>' + esc(s.prescriber) + '</td>' +
         '<td><div class="ops">' + ops + '</div></td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="12" class="empty">該当するお守り薬はありません</td></tr>';
+    }).join('') || '<tr><td colspan="9" class="empty">該当するお守り薬はありません</td></tr>';
   }
 
   ['#stock-search', '#stock-filter-category', '#stock-filter-status', '#stock-show-closed'].forEach((sel) =>
@@ -584,6 +581,7 @@
       '</div>' +
       '<h2 class="memo-title">' + esc(db.settings.memoTitle) + '</h2>' +
       '<table class="memo-table">' +
+        '<colgroup><col style="width:20%"><col style="width:30%"><col style="width:20%"><col style="width:30%"></colgroup>' +
         '<tr><th>患者名</th><td colspan="3" class="memo-patient">' + cell(u.patientName) + '　様' +
           (u.patientId ? '<span class="memo-pid">（ID: ' + esc(u.patientId) + '）</span>' : '') + '</td></tr>' +
         '<tr><th>使用開始日</th><td>' + fmtISO(u.startDate) + '</td>' +
