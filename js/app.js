@@ -105,6 +105,11 @@
     return db.usages.find((u) => u.stockId === s.id && !u.memoIssued) || null;
   }
 
+  function latestUsage(s) {
+    const list = db.usages.filter((u) => u.stockId === s.id);
+    return list.length ? list[list.length - 1] : null;
+  }
+
   function stockStatus(s) {
     return judge(s.prescribedDate, s.expiryMonths, s.actualExpiry);
   }
@@ -196,12 +201,16 @@
           ? esc(s.state)
           : info ? '<span class="chip ' + info.status + '">' + STATUS_LABEL[info.status] + '</span>' : '-';
       const ops = pending
-        ? '<button data-act="memo" data-id="' + s.id + '" class="primary small">処方メモ発行</button>'
+        ? '<button data-act="memo" data-id="' + s.id + '" class="primary small">処方メモ発行</button>' +
+          '<button data-act="edit-use" data-id="' + s.id + '" class="small">使用開始を編集</button>' +
+          '<button data-act="cancel-use" data-id="' + s.id + '" class="small danger">使用開始を取り消す</button>'
         : s.state === '在庫'
         ? (s.category === '抗菌薬' ? '<button data-act="use" data-id="' + s.id + '" class="primary small">使用開始指示</button>' : '') +
           '<button data-act="edit" data-id="' + s.id + '" class="small">編集</button>' +
           '<button data-act="discard" data-id="' + s.id + '" class="small">廃棄</button>'
-        : '<button data-act="restore" data-id="' + s.id + '" class="small">お守り薬に戻す</button>' +
+        : (latestUsage(s) && s.state === '使用済'
+          ? '<button data-act="cancel-use" data-id="' + s.id + '" class="small danger">使用開始を取り消す</button>'
+          : '<button data-act="restore" data-id="' + s.id + '" class="small">お守り薬に戻す</button>') +
           '<button data-act="delete" data-id="' + s.id + '" class="small danger">削除</button>';
       return '<tr class="' + cls + '">' +
         '<td>' + statusCell + '</td>' +
@@ -231,6 +240,19 @@
     switch (b.dataset.act) {
       case 'use': openUseDialog(s); break;
       case 'memo': openMemo([pendingUsage(s)]); break;
+      case 'edit-use': openUseDialog(null, pendingUsage(s)); break;
+      case 'cancel-use': {
+        const u = latestUsage(s);
+        if (!u) break;
+        const msg = s.patientName + ' の「' + s.drugName + '」の使用開始指示（使用開始日 ' + fmtISO(u.startDate) + '）を取り消します。\n' +
+          '使用記録No.' + u.no + ' は削除され、お守り薬は一覧に戻ります。' +
+          (u.memoIssued ? '\n※ 処方メモは発行済みです。' : '') + '\nよろしいですか？';
+        if (!confirm(msg)) break;
+        db.usages = db.usages.filter((x) => x !== u);
+        if (s.state === '使用済') s.state = '在庫';
+        save(); render();
+        break;
+      }
       case 'edit': editStock(s); break;
       case 'discard':
         if (confirm(s.patientName + ' の「' + s.drugName + '」を廃棄済にしますか？')) {
