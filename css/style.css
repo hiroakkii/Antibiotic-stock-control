@@ -160,6 +160,7 @@ body.memo-open .memo-overlay {
 .memo-actions { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; }
 
 .memo {
+  font-family: "BIZ UDPGothic", "BIZ UDPゴシック", "Yu Gothic UI", "Meiryo", sans-serif;
   background: #fff;
   color: #000;
   width: 180mm;

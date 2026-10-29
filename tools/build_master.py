@@ -17,6 +17,7 @@ naiyo, gaiyo, classbook, out = sys.argv[1:5]
 # 対象区分の初期値（分類コード → 区分）。Excel 上の「薬効分類マスタ」シートで自由に変更できる。
 ANTIBIOTIC = {611, 612, 613, 614, 615, 619, 621, 624}
 ANALGESIC = {114}
+NARCOTIC = {811, 821}
 DEFAULT_YEARS = 3  # 仮値。製品の有効期限に合わせて変更すること
 
 # ---------- 取り込み ----------
@@ -67,7 +68,7 @@ for i, (code, name) in enumerate(classes, 2):
     s_class.cell(row=i, column=2, value=name)
     s_class.cell(row=i, column=3, value=f'=COUNTIFS(医薬品マスタ!$C$2:$C${LAST},$A{i},医薬品マスタ!$A$2:$A${LAST},"内用薬")')
     s_class.cell(row=i, column=4, value=f'=COUNTIFS(医薬品マスタ!$C$2:$C${LAST},$A{i},医薬品マスタ!$A$2:$A${LAST},"外用薬")')
-    kind = '抗菌薬' if int(code) in ANTIBIOTIC else '解熱鎮痛薬' if int(code) in ANALGESIC else None
+    kind = '抗菌薬' if int(code) in ANTIBIOTIC else '解熱鎮痛薬' if int(code) in ANALGESIC else '麻薬' if int(code) in NARCOTIC else None
     e = s_class.cell(row=i, column=5, value=kind)
     f = s_class.cell(row=i, column=6, value=DEFAULT_YEARS if kind else None)
     for c in (e, f):
@@ -78,14 +79,14 @@ for i, (code, name) in enumerate(classes, 2):
     s_class.cell(row=i, column=8, value=f'=N(H{i-1})+G{i}')
     for c in (7, 8):
         s_class.cell(row=i, column=c).fill = CALC_FILL
-dv = DataValidation(type='list', formula1='"抗菌薬,解熱鎮痛薬"', allow_blank=True)
+dv = DataValidation(type='list', formula1='"抗菌薬,解熱鎮痛薬,麻薬"', allow_blank=True)
 s_class.add_data_validation(dv)
 dv.add(f'E2:E{CLAST}')
 for col, w in zip('ABCDEFGH', [14, 56, 12, 12, 14, 12, 14, 14]):
     s_class.column_dimensions[col].width = w
 s_class.freeze_panes = 'C2'
 s_class.auto_filter.ref = f'A1:F{CLAST}'
-s_class['J1'] = '【使い方】黄色いセルが設定欄です。「対象区分」に 抗菌薬 / 解熱鎮痛薬 を選ぶと、その薬効分類の医薬品が在庫管理アプリの薬剤マスタとして取り込まれます（空欄の分類は取り込まれません）。'
+s_class['J1'] = '【使い方】黄色いセルが設定欄です。「対象区分」に 抗菌薬 / 解熱鎮痛薬 / 麻薬 を選ぶと、その薬効分類の医薬品が在庫管理アプリの薬剤マスタとして取り込まれます（空欄の分類は取り込まれません）。'
 s_class['J2'] = '「有効期限(年)」は製造からの有効期限で、薬効分類ごとの標準値です。個別の医薬品だけ変えたい場合は「医薬品マスタ」シートの「個別設定(年)」に入力します。'
 s_class['J3'] = '※ 初期設定の分類と有効期限(3年)は仮の値です。必ず確認してから使用してください。'
 s_class['J3'].font = Font(bold=True, color='C00000')

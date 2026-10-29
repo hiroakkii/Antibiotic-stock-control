@@ -4,7 +4,7 @@
 
   const L = window.StockLogic;
   const STORAGE_KEY = 'abx-stock-control-v1';
-  const CATEGORIES = ['抗菌薬', '解熱鎮痛薬'];
+  const CATEGORIES = ['抗菌薬', '解熱鎮痛薬', '麻薬'];
 
   const DEFAULT_SETTINGS = {
     memoTitle: '処方メモ（お守り薬）',
@@ -520,6 +520,7 @@
   function normCategory(v) {
     const s = String(v || '');
     if (/抗菌|抗生/.test(s)) return '抗菌薬';
+    if (/麻薬/.test(s)) return '麻薬';
     if (/解熱|鎮痛|NSAIDs|アセトアミノフェン/i.test(s)) return '解熱鎮痛薬';
     return '';
   }
