@@ -119,16 +119,19 @@
         <label class="check"><input type="checkbox" id="master-replace" checked> 既存マスタを置き換える</label>
         <button id="master-template">マスタのひな形をダウンロード</button>
         <button id="master-add">1件追加</button>
+        <input type="search" id="master-search" placeholder="薬剤名・コードで検索">
+        <label class="check"><input type="checkbox" id="master-unverified"> 有効期限が未確認のものだけ</label>
       </div>
       <p class="hint">
         1行目を見出し行とし、<b>区分</b>（抗菌薬／解熱鎮痛薬）・<b>薬剤名</b>・<b>有効期限(年)</b> または <b>有効期限(月)</b> の列を読み込みます。
         <b>規格</b>・<b>単位</b>・<b>用法用量</b>・<b>コード</b> 列があれば併せて取り込みます。列の順番は問いません。<br>
         <code>master/医薬品マスタ_内用外用.xlsx</code> を読み込む場合は、「薬効分類マスタ」シートで <b>対象区分</b>（抗菌薬／解熱鎮痛薬）を設定した分類の医薬品だけが取り込まれます。
       </p>
+      <div class="summary" id="master-summary"></div>
       <div class="table-wrap">
         <table class="list" id="master-table">
           <thead>
-            <tr><th>コード</th><th>区分</th><th>薬剤名</th><th>規格</th><th>単位</th><th>有効期限</th><th>標準用法・用量</th><th>操作</th></tr>
+            <tr><th>コード</th><th>区分</th><th>薬剤名</th><th>規格</th><th>単位</th><th>有効期限（製造から）</th><th>有効期限の確認</th><th>操作</th></tr>
           </thead>
           <tbody></tbody>
         </table>

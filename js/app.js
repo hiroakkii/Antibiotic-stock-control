@@ -281,7 +281,7 @@
     row.innerHTML =
       '<div class="drug-row-head"><b class="drug-no"></b><button type="button" class="small danger" data-act="remove-row">この薬剤を削除</button></div>' +
       '<div class="form drug-row-body">' +
-      '<label>薬剤名 <span class="req">*</span><input data-f="drugName" list="dl-drugs" required placeholder="薬剤マスタから入力補助されます"><small class="hint" data-r="hint"></small></label>' +
+      '<label>薬剤名 <span class="req">*</span><input data-f="drugName" list="dl-drugs" required placeholder="薬剤マスタから入力補助されます"><small class="hint" data-r="hint"></small><div class="warn" data-r="warn"></div></label>' +
       '<label>区分 <span class="req">*</span><select data-f="category" required>' + categoryOptions() + '</select></label>' +
       '<label>数量<span class="inline"><input data-f="quantity" type="number" min="0" step="any"><input data-f="unit" class="unit" placeholder="錠"></span></label>' +
       '<label>有効期限（製造から）<span class="inline">' +
@@ -305,7 +305,19 @@
     f('expiryMonthsRest').value = v.expiryMonths ? v.expiryMonths % 12 : '';
     renumberRows();
     updateRowPreview(row);
+    updateRowWarn(row);
     return row;
+  }
+
+  // マスタの有効期限を確認していない薬剤を選んだら警告し、薬剤マスタへ誘導する
+  function updateRowWarn(row) {
+    const d = editingId ? null : findDrug($('[data-f=drugName]', row).value);
+    const el = $('[data-r=warn]', row);
+    el.innerHTML = d && !d.verified
+      ? '⚠ この薬剤の有効期限は<b>未確認</b>です（マスタの設定: ' + L.monthsText(d.expiryMonths) + '）。' +
+        '実際の有効期限を確認し、薬剤マスタで「確認済みにする」を押してください。<br>' +
+        '<a href="#" data-act="open-master" data-name="' + esc(d.name) + '">薬剤マスタで確認する →</a>'
+      : '';
   }
 
   function renumberRows() {
@@ -375,9 +387,18 @@
       }
     }
     updateRowPreview(row);
+    updateRowWarn(row);
   });
 
   rowsBox.addEventListener('click', (e) => {
+    const link = e.target.closest('[data-act=open-master]');
+    if (link) {
+      e.preventDefault();
+      $('#master-search').value = link.dataset.name;
+      $('#master-unverified').checked = false;
+      showTab('master');
+      return;
+    }
     const b = e.target.closest('[data-act=remove-row]');
     if (!b) return;
     b.closest('.drug-row').remove();
@@ -413,6 +434,9 @@
         note: g('note'),
       });
     }
+    const unverified = Array.from(new Set(recs.map((r) => findDrug(r.drugName)).filter((d) => d && !d.verified).map((d) => d.name)));
+    if (!editingId && unverified.length &&
+        !confirm('次の薬剤は、有効期限をまだ確認していません。\n・' + unverified.join('\n・') + '\n\nこのまま登録しますか？\n（「キャンセル」で戻り、薬剤マスタで確認できます）')) return;
     if (editingId) {
       Object.assign(db.stocks.find((s) => s.id === editingId), recs[0]);
     } else {
@@ -699,11 +723,12 @@
       const result = parseMasterRows(rows);
       if (!result.drugs.length) throw new Error('取り込める薬剤がありませんでした。');
       if ($('#master-replace').checked) {
-        db.drugs = result.drugs;
+        const olds = new Map(db.drugs.map((x) => [x.name, x]));
+        db.drugs = result.drugs.map((d) => carryVerified(d, olds.get(d.name)));
       } else {
         result.drugs.forEach((d) => {
           const i = db.drugs.findIndex((x) => x.name === d.name);
-          if (i >= 0) db.drugs[i] = Object.assign(d, { id: db.drugs[i].id });
+          if (i >= 0) db.drugs[i] = Object.assign(carryVerified(d, db.drugs[i]), { id: db.drugs[i].id });
           else db.drugs.push(d);
         });
       }
@@ -733,8 +758,33 @@
     renderMaster();
   });
 
+  function verifiedLabel(d) {
+    return d.verified
+      ? '<span class="chip green">確認済</span><br><small>' + esc(fmtISO(d.verifiedAt)) + '</small>'
+      : '<span class="chip yellow">未確認</span>';
+  }
+
+  // 薬剤マスタの再読み込みで確認済みの印が消えないよう、同名・同じ有効期限なら引き継ぐ
+  function carryVerified(d, old) {
+    if (old && old.verified && old.expiryMonths === d.expiryMonths) {
+      d.verified = true;
+      d.verifiedAt = old.verifiedAt;
+    }
+    return d;
+  }
+
+  const MASTER_LIMIT = 300;
+
   function renderMaster() {
-    $('#master-table tbody').innerHTML = db.drugs.map((d) => {
+    const q = $('#master-search').value.trim().normalize('NFKC');
+    const onlyUnverified = $('#master-unverified').checked;
+    const matched = db.drugs.filter((d) =>
+      d.editing ||
+      ((!q || (d.name + ' ' + d.code).includes(q)) && (!onlyUnverified || !d.verified)));
+    const shown = matched.slice(0, MASTER_LIMIT);
+    $('#master-summary').textContent = '薬剤マスタ ' + db.drugs.length + ' 件（未確認 ' + db.drugs.filter((d) => !d.verified).length + ' 件）' +
+      (matched.length > MASTER_LIMIT ? '　該当 ' + matched.length + ' 件のうち先頭 ' + MASTER_LIMIT + ' 件を表示' : '');
+    $('#master-table tbody').innerHTML = shown.map((d) => {
       if (d.editing) {
         return '<tr data-id="' + d.id + '" class="editing">' +
           '<td><input data-f="code" value="' + esc(d.code) + '" class="short"></td>' +
@@ -743,18 +793,24 @@
           '<td><input data-f="spec" value="' + esc(d.spec) + '" class="short"></td>' +
           '<td><input data-f="unit" value="' + esc(d.unit) + '" class="short"></td>' +
           '<td><input data-f="expiryMonths" type="number" min="1" value="' + d.expiryMonths + '" class="short"> ヶ月</td>' +
-          '<td><input data-f="dosage" value="' + esc(d.dosage) + '"></td>' +
+          '<td>' + verifiedLabel(d) + '</td>' +
           '<td><div class="ops"><button data-act="ok" class="primary small">確定</button><button data-act="del" class="small danger">削除</button></div></td>' +
           '</tr>';
       }
       return '<tr data-id="' + d.id + '">' +
         '<td>' + esc(d.code) + '</td><td>' + esc(d.category) + '</td><td>' + esc(d.name) + '</td>' +
         '<td>' + esc(d.spec) + '</td><td>' + esc(d.unit) + '</td><td>' + L.monthsText(d.expiryMonths) + '</td>' +
-        '<td>' + esc(d.dosage) + '</td>' +
-        '<td><div class="ops"><button data-act="edit" class="small">編集</button><button data-act="del" class="small danger">削除</button></div></td>' +
+        '<td>' + verifiedLabel(d) + '</td>' +
+        '<td><div class="ops">' +
+          (d.verified
+            ? '<button data-act="unverify" class="small">未確認に戻す</button>'
+            : '<button data-act="verify" class="primary small">確認済みにする</button>') +
+          '<button data-act="edit" class="small">編集</button><button data-act="del" class="small danger">削除</button></div></td>' +
         '</tr>';
-    }).join('') || '<tr><td colspan="8" class="empty">薬剤マスタが未登録です。Excelファイルを読み込んでください。</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="empty">' + (db.drugs.length ? '該当する薬剤はありません' : '薬剤マスタが未登録です。Excelファイルを読み込んでください。') + '</td></tr>';
   }
+
+  ['#master-search', '#master-unverified'].forEach((sel) => $(sel).addEventListener('input', renderMaster));
 
   $('#master-table').addEventListener('click', (e) => {
     const b = e.target.closest('button[data-act]');
@@ -763,6 +819,12 @@
     const d = db.drugs.find((x) => x.id === tr.dataset.id);
     if (b.dataset.act === 'edit') {
       d.editing = true;
+    } else if (b.dataset.act === 'verify') {
+      d.verified = true;
+      d.verifiedAt = L.toISO(today());
+    } else if (b.dataset.act === 'unverify') {
+      d.verified = false;
+      d.verifiedAt = '';
     } else if (b.dataset.act === 'del') {
       if (!d.name || confirm('「' + d.name + '」をマスタから削除しますか？')) db.drugs = db.drugs.filter((x) => x !== d);
     } else if (b.dataset.act === 'ok') {
@@ -941,6 +1003,7 @@
     renderStock();
     renderUsage();
     renderMaster();
+    $$('.drug-row', rowsBox).forEach(updateRowWarn);
     renderPatients();
     renderSettings();
   }

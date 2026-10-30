@@ -216,3 +216,6 @@ body.memo-open .memo-overlay {
 .doctor-list li { display: flex; justify-content: space-between; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); }
 .doctor-list li:last-child { border-bottom: none; }
 .doctor-list li.empty { color: var(--muted); }
+
+.warn:not(:empty) { margin-top: 4px; padding: 6px 8px; background: #fff4d6; border: 1px solid var(--yellow-strong); border-radius: 4px; font-weight: normal; font-size: 13px; color: #5c4300; }
+.warn a { color: var(--primary); font-weight: bold; }
