@@ -2,6 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8">
+<!-- 外部への通信を禁止（ブラウザが通信を止めます） -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>在宅 抗菌薬・解熱鎮痛薬 在庫管理</title>
   <link rel="stylesheet" href="css/style.css">
@@ -15,7 +17,7 @@
   <nav class="tabs no-print" id="tabs">
     <button data-tab="stock" class="active">お守り薬一覧</button>
     <button data-tab="register">お守り薬登録</button>
-    <button data-tab="usage">使用記録（データシート）</button>
+    <button data-tab="usage">使用記録（データシート）<span class="chip red" id="usage-badge" hidden title="処方メモに医師の指示が記載されていない使用記録の数"></span></button>
     <button data-tab="master">薬剤マスタ</button>
     <button data-tab="patients">患者マスタ</button>
     <button data-tab="settings">設定・バックアップ</button>
@@ -25,7 +27,7 @@
     <!-- お守り薬一覧 -->
     <section id="tab-stock" class="tab active">
       <div class="toolbar">
-        <input type="search" id="stock-search" placeholder="患者名・薬剤名で検索">
+        <input type="search" id="stock-search" placeholder="患者名・薬剤名で検索（ふりがな・ひらがなでも可）" title="患者名は患者マスタのふりがなでも探せます。薬剤名はひらがなで入力してもカタカナの名前に一致します。空白で区切ると複数の条件で絞り込みます" style="min-width:22em">
         <select id="stock-filter-category">
           <option value="">区分: すべて</option>
           <option>抗菌薬</option>
@@ -45,13 +47,20 @@
         <span class="chip red">赤色</span> 処方日から有効期限の期間が経過
       </div>
       <div class="summary" id="stock-summary"></div>
+      <p class="hint" id="stock-sort-hint">表の見出しを押すと、その項目で並べ替えます（もう一度押すと逆の順、3回目で元の並びに戻ります）。</p>
       <div class="table-wrap">
         <table class="list" id="stock-table">
           <thead>
             <tr>
-              <th>状態</th><th>患者名</th><th>薬剤名（区分）</th><th>数量</th>
-              <th>処方日（経過）</th><th>有効期限</th><th>黄色／赤色になる日</th>
-              <th>処方医</th><th>操作</th>
+              <th data-sort="status" title="状態（メモ未発行→赤→黄→期限内）で並べ替え">状態</th>
+              <th data-sort="patient" title="患者名（ふりがながあれば、ふりがな順）で並べ替え">患者名</th>
+              <th data-sort="drug" title="薬剤名で並べ替え">薬剤名（区分）</th>
+              <th data-sort="qty" title="数量で並べ替え">数量</th>
+              <th data-sort="prescribed" title="処方日で並べ替え（▲ 古い順＝経過が長い順／▼ 新しい順）">処方日（経過）</th>
+              <th data-sort="expiry" title="期限（赤色になる日）で並べ替え">有効期限</th>
+              <th data-sort="yellow" title="黄色になる日で並べ替え">黄色／赤色になる日</th>
+              <th data-sort="prescriber" title="処方医で並べ替え">処方医</th>
+              <th>操作</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -93,11 +102,27 @@
         <input type="search" id="usage-search" placeholder="患者名・医師名・薬剤名で検索">
         <select id="usage-filter-memo">
           <option value="">処方メモ: すべて</option>
+          <option value="waiting">指示未記載のみ（発行済）</option>
           <option value="no">未発行のみ</option>
-          <option value="yes">発行済のみ</option>
+          <option value="yes">発行済のみ（記載済・未記載とも）</option>
+          <option value="written">指示記載済のみ</option>
         </select>
+        <select id="usage-filter-doctor" title="開始指示医師で絞り込み"></select>
+        <select id="usage-sort" title="並び順">
+          <option value="new">並び順: 新しい順</option>
+          <option value="waiting">指示未記載を先に（待たせている順）</option>
+          <option value="doctor">医師ごと</option>
+          <option value="start">使用開始日の古い順</option>
+        </select>
+        <button id="usage-waiting-list" title="処方メモに指示が未記載の使用記録を、医師ごとにまとめて表示・印刷します">医師別 未記載一覧</button>
+        <button id="usage-mark-all" hidden>表示中をすべて記載済にする</button>
         <button id="usage-export">Excelに出力</button>
       </div>
+      <div class="legend">
+        <span class="chip red">赤い行</span> 処方メモは発行したが、医師の指示が未記載
+        <span class="chip yellow">黄色い行</span> 処方メモが未発行
+      </div>
+      <div class="summary" id="usage-summary"></div>
       <div class="table-wrap">
         <table class="list" id="usage-table">
           <thead>
@@ -229,6 +254,17 @@
       <button id="memo-close">閉じる</button>
     </div>
     <div id="memo-sheet"></div>
+  </div>
+
+  <!-- 指示未記載の一覧 (医師別・印刷用) -->
+  <div id="waiting-overlay" class="memo-overlay">
+    <div class="memo-actions no-print">
+      <select id="waiting-doctor"></select>
+      <label class="check inv"><input type="checkbox" id="waiting-include-unissued"> 処方メモ未発行の分も含める</label>
+      <button id="waiting-print" class="primary">印刷する</button>
+      <button id="waiting-close">閉じる</button>
+    </div>
+    <div id="waiting-sheet"></div>
   </div>
 
   <datalist id="dl-drugs"></datalist>
